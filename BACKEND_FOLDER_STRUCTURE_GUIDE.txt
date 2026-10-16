@@ -1,0 +1,446 @@
+BACKEND-PRODUCT MANAGEMENT
+DETAILED FOLDER STRUCTURE AND FUTURE FILE PLACEMENT GUIDE
+========================================================
+
+1. PURPOSE OF THIS DOCUMENT
+---------------------------
+This guide explains the backend folder created for the Shop Billing + Inventory +
+Management System. It describes what each folder and file is responsible for,
+where future code should be added, and how a new feature should move through the
+backend.
+
+The backend currently uses:
+- Node.js: JavaScript runtime
+- TypeScript: typed application code
+- Express: HTTP server and routing
+- PostgreSQL: relational database
+- pg: PostgreSQL driver
+- Zod: request validation
+- JWT + bcrypt: token-based authentication and password hashing
+
+This is the structure of the backend starter that was generated. Some features
+described as future work below are architectural recommendations, not code that
+is already implemented.
+
+2. TOP-LEVEL STRUCTURE
+----------------------
+Backend-Product Management/
+|
+|-- src/
+|   |-- app.ts
+|   |-- server.ts
+|   |-- config/
+|   |   `-- env.ts
+|   |-- db/
+|   |   |-- pool.ts
+|   |   |-- schema.sql
+|   |   |-- migrate.ts
+|   |   `-- seed.ts
+|   |-- middleware/
+|   |   |-- auth.ts
+|   |   |-- errorHandler.ts
+|   |   `-- validate.ts
+|   |-- routes/
+|   |   |-- auth.ts
+|   |   |-- products.ts
+|   |   |-- categories.ts
+|   |   |-- roles.ts
+|   |   |-- modules.ts
+|   |   |-- employees.ts
+|   |   `-- auditLogs.ts
+|   |-- services/
+|   |   `-- authService.ts
+|   |-- types/
+|   |   |-- index.ts
+|   |   `-- express.d.ts
+|   `-- utils/
+|       |-- http.ts
+|       `-- audit.ts
+|
+|-- .env.example
+|-- .gitignore
+|-- docker-compose.yml
+|-- package.json
+|-- tsconfig.json
+`-- README.md
+
+3. WHAT EACH TOP-LEVEL FILE DOES
+-------------------------------
+package.json
+  Defines project metadata, installed packages, and commands such as:
+  npm run dev, npm run build, npm start, npm run db:migrate, npm run db:seed.
+  When adding a new package, use npm install <package> or npm install -D
+  <package> for development-only dependencies. Do not manually guess versions.
+
+tsconfig.json
+  Tells TypeScript how to compile files in src/ into JavaScript in dist/.
+  Usually changes only when the build strategy or TypeScript settings change.
+
+.env.example
+  Documents environment variables needed to run the backend.
+  Copy it to .env for local development. Keep real passwords, database URLs,
+  JWT secrets, and API keys in .env; never commit .env to Git.
+
+.gitignore
+  Prevents local-only files such as node_modules, dist, .env, and logs from
+  being committed.
+
+docker-compose.yml
+  Starts a local PostgreSQL container for development.
+  It is not the production database configuration. Change local credentials
+  carefully and keep .env's DATABASE_URL aligned with the container.
+
+README.md
+  Contains installation, startup, and API usage instructions. Update it when
+  setup commands, environment variables, or important endpoints change.
+
+4. THE src/ FOLDER
+------------------
+src/ contains the actual backend source code. Keep application logic here;
+do not put TypeScript source files in dist/. The dist/ folder is generated
+when npm run build runs and should not be edited manually.
+
+src/server.ts
+  The process entry point. Starts the HTTP server, reads the configured port,
+  and closes the database pool during shutdown.
+  Future work here: graceful-shutdown improvements or server-level startup
+  tasks. Do not place individual API endpoint logic here.
+
+src/app.ts
+  Creates and configures the Express application. Adds security headers,
+  CORS, JSON parsing, rate limiting, API route registration, 404 handling,
+  and centralized error handling.
+  When a new route group is created, import and mount it here, for example:
+  app.use('/api/suppliers', supplierRoutes).
+  Avoid putting business rules or SQL queries directly in this file.
+
+5. src/config/
+----------------
+env.ts
+  Loads environment variables and validates them with Zod. The application
+  fails early if required settings are missing or invalid.
+  Add new environment variable definitions here when adding settings such as
+  email service credentials, object storage, payment gateway configuration,
+  or feature flags. Also document each new variable in .env.example.
+  Never place secret values directly in source code.
+
+Future files that may belong here:
+  email.ts       - email provider configuration
+  storage.ts     - object/file storage configuration
+  payment.ts     - payment gateway configuration
+  These are suggestions only; create them when the feature is actually needed.
+
+6. src/db/
+------------
+pool.ts
+  Creates and exports the shared PostgreSQL connection pool. Import this pool
+  when database access is needed; do not create a new pool in each route.
+
+schema.sql
+  Defines the database tables, constraints, foreign keys, and indexes.
+  The current schema includes shops, users, roles, permissions, role_permissions,
+  shop_modules, employee_profiles, audit_logs, categories, and products.
+  When adding a table, add its CREATE TABLE statement, foreign keys, constraints,
+  and useful indexes here for this starter's simple SQL-based setup.
+
+migrate.ts
+  Reads schema.sql and applies it to the configured database. This is a simple
+  initial schema runner, not a versioned migration framework. For a production
+  team workflow, introduce versioned migrations (for example, one SQL file per
+  change, tracked by a migration tool) rather than repeatedly editing schema.sql
+  after deployment.
+
+seed.ts
+  Inserts the shared permission catalogue. Add new permission codes here when
+  introducing backend actions that require authorization. Keep codes consistent
+  with the format module.action, such as inventory.edit or billing.create.
+
+Future database-related files:
+  migrations/       - ordered, versioned schema changes
+  seeds/            - separate seed scripts for development/test data
+  queries/           - shared SQL query functions, if query logic grows large
+  Do not add these folders until they help the project's size and team workflow.
+
+7. src/middleware/
+------------------
+Middleware runs before or after route handlers to apply cross-cutting rules.
+
+auth.ts
+  Reads a Bearer JWT, verifies it, loads the current user and role, and attaches
+  authenticated user/shop information to the Express request. It also exports
+  requirePermission(code), which checks the role's permission before allowing
+  access. Owner is treated as full access in this starter.
+
+validate.ts
+  Provides validateBody(schema), used to validate request bodies with Zod.
+  Put reusable request validation mechanics here; keep the actual schema for
+  a specific endpoint near its route or in a dedicated validation file later.
+
+errorHandler.ts
+  Converts validation failures and known HTTP errors into consistent JSON
+  responses. Unknown errors are logged and returned as a generic server error.
+  Add global error handling behavior here, not repeated try/catch response
+  formatting in every route.
+
+Future middleware examples:
+  requestId.ts      - attach a request/correlation ID
+  upload.ts         - configure safe file uploads
+  rateLimit.ts      - shared rate-limit policies
+  requireModule.ts  - block access when a shop has disabled a module
+  Use middleware for rules that apply across many endpoints. Do not rely on
+  frontend button hiding as authorization.
+
+8. src/routes/
+---------------
+Routes define the HTTP interface: URL, HTTP method, middleware, validation,
+and which service or database operation should run. A route should translate
+an HTTP request into application work and return the response.
+
+auth.ts
+  Shop registration, login, and current-user endpoint.
+  Future: password reset request/confirmation, logout or token revocation,
+  refresh-token rotation, email/phone verification. These need secure token
+  storage and delivery design; they are not currently implemented.
+
+products.ts
+  Product list, details, create, update, and delete endpoints. Product queries
+  are scoped to the authenticated shop. This is the current product API.
+
+categories.ts
+  Category list, create, update, and delete endpoints, scoped to the shop.
+
+roles.ts
+  Role listing, permission catalogue, and role creation. Future: editing role
+  permissions, deleting eligible custom roles, and safely changing a user's role.
+
+modules.ts
+  Lists and toggles optional shop modules. Future module enforcement should be
+  applied to protected module routes as well; saving a toggle alone does not
+  automatically disable every endpoint.
+
+employees.ts
+  Lists employee profiles, creates users with roles, and updates profile data
+  or active status. Future: invitations, onboarding, employment history, and
+  carefully designed salary access restrictions.
+
+auditLogs.ts
+  Returns paginated audit records for the authenticated shop. Access is guarded
+  by the audit.view permission.
+
+Future route files should be added by feature, for example:
+  suppliers.ts       - suppliers and supplier contact details
+  purchases.ts       - purchase orders and goods received
+  customers.ts       - customer records and credit limits
+  invoices.ts        - draft/finalized bills and invoice retrieval
+  payments.ts        - payment records, allocations, refunds
+  returns.ts         - sales returns and credit notes
+  inventory.ts       - stock movements, adjustments, low-stock alerts
+  reports.ts         - sales summaries and operational reports
+  documents.ts       - document metadata and file upload/download endpoints
+  Do not create all these files empty in advance. Add a route when its feature
+  is being implemented.
+
+9. src/services/
+----------------
+Services hold business rules and coordinate database operations. This layer
+helps keep route files smaller and makes rules easier to test.
+
+authService.ts
+  Contains the core shop-registration and login workflows, including a database
+  transaction for shop setup, role creation, permission assignment, default
+  module setup, owner profile creation, password hashing, and token creation.
+
+Recommended future direction:
+  As route logic grows, move SQL and business rules out of route files into
+  services. Examples:
+    productService.ts
+    categoryService.ts
+    employeeService.ts
+    roleService.ts
+    invoiceService.ts
+    paymentService.ts
+    inventoryService.ts
+    purchaseService.ts
+    reportService.ts
+  Example flow:
+    routes/invoices.ts -> services/invoiceService.ts -> database queries
+    -> response from route.
+  For billing, the service layer should own calculations and transaction
+  boundaries; do not calculate final invoice totals only in the browser.
+
+10. src/types/
+---------------
+index.ts
+  Defines shared TypeScript types, currently including AuthUser, the verified
+  identity and shop/role context attached to a request.
+
+express.d.ts
+  Extends Express Request typing so req.auth is recognized by TypeScript.
+
+Future files:
+  product.ts, category.ts, invoice.ts, payment.ts, inventory.ts, employee.ts
+  for shared request, response, and domain types when those types are reused.
+  Avoid creating a separate type file for every tiny one-off object.
+
+11. src/utils/
+---------------
+http.ts
+  Shared HTTP response helper and HttpError class for expected HTTP failures.
+  Use consistent response shapes and throw HttpError for known statuses.
+
+audit.ts
+  Helper to write audit entries with shop, actor, action, entity, old value,
+  and new value. Use it for important changes to business data.
+
+Future utilities:
+  money.ts          - currency-safe rounding and amount helpers
+  pagination.ts     - reusable pagination parsing
+  invoiceNumber.ts  - invoice number formatting/generation helper
+  csv.ts            - CSV import/export helpers
+  Do not put domain workflows in utils. A utility should be small, reusable,
+  and not tied to one route's business process.
+
+12. HOW A REQUEST MOVES THROUGH THE BACKEND
+-------------------------------------------
+Example: creating a product.
+
+1. The frontend sends POST /api/products with JSON and a Bearer token.
+2. src/app.ts has mounted the /api/products route group.
+3. src/routes/products.ts receives the request.
+4. authenticate middleware validates the token and loads the user/shop.
+5. requirePermission('inventory.create') checks authorization.
+6. validateBody checks the payload.
+7. The route writes the product to PostgreSQL using src/db/pool.ts.
+8. The audit helper records the important change.
+9. The route returns a JSON response.
+10. If an error occurs, src/middleware/errorHandler.ts formats the response.
+
+Recommended future flow for complex modules:
+  HTTP request -> route -> authentication/authorization/validation
+  -> service (business rules + transaction) -> database
+  -> audit event -> JSON response.
+
+13. WHERE FUTURE FEATURES SHOULD GO
+-----------------------------------
+Feature: Billing / invoices
+  routes/invoices.ts
+  services/invoiceService.ts
+  types/invoice.ts
+  schema/migrations: invoices, invoice_items, invoice_number_sequences
+  Important rule from the project plan: finalized invoices should be immutable.
+  Corrections should use returns/credit notes or an audited correction process.
+  Store a snapshot of product name, SKU, unit price, tax rate, discount, and
+  quantities on invoice items so later product edits do not rewrite old bills.
+  Use database transactions for invoice finalization and stock/payment changes.
+
+Feature: Payments and customer credit (udhaar)
+  routes/payments.ts, routes/customers.ts
+  services/paymentService.ts, services/customerService.ts
+  types/payment.ts, types/customer.ts
+  database tables for customers, payments, invoice_payment_allocations, and
+  customer account/ledger entries. Model partial and split payments explicitly;
+  do not store only one paid/unpaid boolean.
+
+Feature: Inventory
+  routes/inventory.ts, routes/purchases.ts
+  services/inventoryService.ts, services/purchaseService.ts
+  types/inventory.ts, types/purchase.ts
+  Add a stock movement ledger for purchases, sales, returns, damage, and manual
+  adjustments. Avoid relying forever on a single editable stock number.
+  Update stock and finalize invoices atomically in a database transaction.
+
+Feature: Suppliers
+  routes/suppliers.ts
+  services/supplierService.ts
+  types/supplier.ts
+  Add supplier and supplier-purchase tables, scoped by shop_id.
+
+Feature: Reports
+  routes/reports.ts
+  services/reportService.ts
+  Use SQL aggregates and indexes; enforce shop scope and reports.view permission.
+
+Feature: File storage / invoice PDFs
+  routes/documents.ts or invoice PDF endpoint
+  services/documentService.ts
+  Store files in object storage or managed file storage; store metadata and
+  access ownership in PostgreSQL. Do not save user uploads in the source folder.
+
+Feature: Email, SMS, WhatsApp, payment gateway
+  Add configuration under src/config/, integration logic under services/,
+  and endpoints under routes/ only when needed. Keep credentials in environment
+  variables and verify provider webhooks.
+
+14. DATABASE DESIGN RULES FOR THIS PROJECT
+------------------------------------------
+- Every shop-owned record must be scoped to shop_id, either directly or through
+  a rigorously enforced parent relationship.
+- Always include shop_id in database queries for tenant-owned records. Never
+  trust a shop_id sent by the frontend; use the authenticated user's shop.
+- Use foreign keys, uniqueness constraints, CHECK constraints, and indexes.
+- Use transactions for multi-step operations such as shop registration, invoice
+  finalization, purchase receiving, returns, and payment allocation.
+- For money, use PostgreSQL NUMERIC/DECIMAL and careful rounding rules. Avoid
+  binary floating-point arithmetic for authoritative totals.
+- Use soft deletion or status transitions where business/audit requirements
+  require records to remain available.
+- Do not edit finalized invoices in place; use credit notes/returns and audit.
+- Use versioned migrations once deployed to shared environments.
+
+15. SECURITY AND PRODUCTION NOTES
+---------------------------------
+- Keep .env out of Git. Rotate any secret that has accidentally been committed.
+- Use HTTPS in production and a managed secret store.
+- Validate all external input; do not trust frontend validation.
+- Apply authentication, permission checks, shop isolation, and module checks
+  on every relevant endpoint.
+- Add rate limits to sensitive endpoints, especially login and password reset.
+- Avoid logging passwords, tokens, payment data, or sensitive personal data.
+- Restrict who can view salary and emergency-contact fields.
+- Configure database backups and test restoration.
+- Add automated tests for authorization boundaries and cross-shop access.
+- The current starter is not a completed production system. Review it and run
+  type checks/tests before deployment.
+
+16. DEVELOPMENT WORKFLOW FOR A NEW FEATURE
+------------------------------------------
+When implementing a feature, use this sequence:
+
+1. Define the use case and who may perform each action.
+2. Define the database tables, constraints, and indexes.
+3. Add a versioned migration (or update schema.sql while still in local setup).
+4. Add/review permission codes in src/db/seed.ts.
+5. Add shared types in src/types/ if they are reused.
+6. Add validation schemas for incoming data.
+7. Implement business rules and database transactions in src/services/.
+8. Create endpoints in src/routes/.
+9. Mount the route in src/app.ts.
+10. Add authentication, permission, tenant-isolation, and module checks.
+11. Add audit events for important state changes.
+12. Test success, invalid input, missing permissions, inactive users, and
+    attempts to access another shop's data.
+13. Update README.md with endpoint examples and setup notes.
+14. Run:
+      npm run typecheck
+      npm run build
+      npm run db:migrate
+      npm run db:seed
+    Then test the endpoint using the frontend, curl, Postman, or an API client.
+
+17. CURRENT LIMITATIONS TO KEEP IN MIND
+---------------------------------------
+- The current database runner applies one schema.sql file; it is not a mature
+  migration system.
+- Billing, invoice finalization, payment processing, stock movement history,
+  supplier purchasing, customer credit, returns, credit notes, and reports
+  are planned future modules, not complete in this starter.
+- Password reset and refresh-token rotation are not implemented.
+- The starter's product stock field is a simple number. A real billing workflow
+  needs a transaction-backed inventory ledger to prevent incorrect stock.
+- Module toggles are stored, but each feature endpoint must explicitly enforce
+  whether its module is enabled.
+- Before production, review the code, run TypeScript checks and automated tests,
+  and fix any issues discovered during integration.
+
+END OF GUIDE
+============
