@@ -1,5 +1,7 @@
 node_modules/
 dist/
 .env
+.env.test
+.env.local
 coverage/
 *.log

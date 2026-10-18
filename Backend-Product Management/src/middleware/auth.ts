@@ -5,45 +5,99 @@ import { env } from '../config/env';
 import { HttpError } from '../utils/http';
 import type { AuthUser } from '../types';
 
-interface TokenPayload { sub: string; shopId: string; roleId: string; iat: number; exp: number; }
+interface TokenPayload {
+  sub: string;
+  shopId: string;
+  roleId: string;
+  iat: number;
+  exp: number;
+}
 
 export const authenticate: RequestHandler = async (req, _res, next) => {
   try {
     const header = req.header('authorization');
-    if (!header?.startsWith('Bearer ')) throw new HttpError(401, 'Authentication required.');
+    if (!header?.startsWith('Bearer ')) {
+      throw new HttpError(401, 'Authentication required.');
+    }
     const token = header.slice(7);
     const payload = jwt.verify(token, env.JWT_SECRET) as TokenPayload;
+
+    // Resolve user state directly from DB to prevent stale roles/tokens
     const result = await pool.query(
-      `SELECT u.id,u.shop_id,u.role_id,u.is_active,r.name AS role_name
-       FROM users u JOIN roles r ON r.id=u.role_id AND r.shop_id=u.shop_id
-       WHERE u.id=$1 AND u.shop_id=$2`,
-      [payload.sub,payload.shopId]
+      `SELECT u.id, u.shop_id, u.role_id, u.is_active, r.name AS role_name
+       FROM users u
+       JOIN roles r ON r.id = u.role_id AND r.shop_id = u.shop_id
+       WHERE u.id = $1 AND u.shop_id = $2`,
+      [payload.sub, payload.shopId]
     );
+
     const user = result.rows[0];
-    if (!user || !user.is_active) throw new HttpError(401, 'Account is inactive or no longer exists.');
+    if (!user || !user.is_active) {
+      throw new HttpError(401, 'Account is inactive or no longer exists.');
+    }
+
     req.auth = {
-      id: user.id, shopId: user.shop_id, roleId: user.role_id,
-      roleName: user.role_name, isOwner: user.role_name === 'Owner'
+      id: user.id,
+      shopId: user.shop_id,
+      roleId: user.role_id,
+      roleName: user.role_name,
+      isOwner: user.role_name === 'Owner'
     } satisfies AuthUser;
+
     next();
   } catch (error) {
     next(error instanceof HttpError ? error : new HttpError(401, 'Invalid or expired token.'));
   }
 };
 
-export function requirePermission(code: string): RequestHandler {
+export function requirePermission(...codes: string[]): RequestHandler {
+  return async (req, _res, next) => {
+    try {
+      if (!req.auth) {
+        throw new HttpError(401, 'Authentication required.');
+      }
+      // Owners have all permissions by default within their shop
+      if (req.auth.isOwner) {
+        return next();
+      }
+
+      const result = await pool.query(
+        `SELECT 1 FROM role_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id
+         WHERE rp.role_id = $1 AND p.code = ANY($2::text[])`,
+        [req.auth.roleId, codes]
+      );
+
+      if (!result.rowCount) {
+        throw new HttpError(403, `Forbidden: Missing required permission (${codes.join(' or ')})`);
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+export const requireOwner: RequestHandler = (req, _res, next) => {
+  if (!req.auth) return next(new HttpError(401, 'Authentication required.'));
+  if (!req.auth.isOwner) return next(new HttpError(403, 'Forbidden: Owner access required.'));
+  next();
+};
+
+export function requireModule(moduleName: string): RequestHandler {
   return async (req, _res, next) => {
     try {
       if (!req.auth) throw new HttpError(401, 'Authentication required.');
-      if (req.auth.isOwner) return next();
       const result = await pool.query(
-        `SELECT 1 FROM role_permissions rp
-         JOIN permissions p ON p.id=rp.permission_id
-         WHERE rp.role_id=$1 AND p.code=$2`,
-        [req.auth.roleId,code]
+        `SELECT is_enabled FROM shop_modules WHERE shop_id = $1 AND module_name = $2`,
+        [req.auth.shopId, moduleName]
       );
-      if (!result.rowCount) throw new HttpError(403, `Missing permission: ${code}`);
+      if (!result.rowCount || !result.rows[0].is_enabled) {
+        throw new HttpError(403, `Module '${moduleName}' is disabled for this shop.`);
+      }
       next();
-    } catch (error) { next(error); }
+    } catch (error) {
+      next(error);
+    }
   };
 }

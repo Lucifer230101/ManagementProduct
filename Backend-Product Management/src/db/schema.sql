@@ -104,7 +104,21 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   FOREIGN KEY(category_id, shop_id) REFERENCES categories(id, shop_id) ON DELETE RESTRICT
 );
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(64) NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_products_shop_created ON products(shop_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_categories_shop ON categories(shop_id);
 CREATE INDEX IF NOT EXISTS idx_audit_shop_created ON audit_logs(shop_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_users_shop ON users(shop_id);
+CREATE INDEX IF NOT EXISTS idx_roles_shop ON roles(shop_id);
+CREATE INDEX IF NOT EXISTS idx_employee_profiles_shop ON employee_profiles(shop_id);
+CREATE INDEX IF NOT EXISTS idx_shop_modules_shop ON shop_modules(shop_id);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_lookup ON password_reset_tokens(token_hash, expires_at);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);

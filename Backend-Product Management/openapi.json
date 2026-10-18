@@ -1,0 +1,445 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Shop Billing + Inventory + Management System API",
+    "version": "1.0.0",
+    "description": "Production-grade backend REST API providing multi-tenant shop management, RBAC, employee profiles, modular feature gating, and auditing."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000/api/v1",
+      "description": "Local development server (v1 API)"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter your JWT token obtained from /auth/login or /auth/register"
+      }
+    },
+    "schemas": {
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string" },
+          "data": { "type": "object" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string" },
+          "errors": { "type": "object" }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Returns operational health and PostgreSQL connectivity status",
+        "security": [],
+        "responses": {
+          "200": { "description": "Healthy" },
+          "503": { "description": "Database disconnected / degraded" }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "Shop registration and initial owner setup",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["shopName", "name", "email", "password"],
+                "properties": {
+                  "shopName": { "type": "string", "example": "Downtown Mart" },
+                  "shopType": { "type": "string", "enum": ["grocery", "clothing", "pharmacy", "electronics", "hardware", "stationery", "general"], "default": "general" },
+                  "currency": { "type": "string", "default": "INR" },
+                  "gstin": { "type": "string" },
+                  "name": { "type": "string", "example": "John Doe" },
+                  "email": { "type": "string", "format": "email", "example": "owner@downtownmart.com" },
+                  "phone": { "type": "string", "example": "+919876543210" },
+                  "password": { "type": "string", "format": "password", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Shop and owner initialized successfully" },
+          "400": { "description": "Validation failure" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" },
+                  "shopId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "User logout",
+        "responses": {
+          "200": { "description": "Logged out" }
+        }
+      }
+    },
+    "/auth/password/forgot": {
+      "post": {
+        "summary": "Request password reset token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "shopId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Token generated" }
+        }
+      }
+    },
+    "/auth/password/reset": {
+      "post": {
+        "summary": "Reset password using token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "newPassword"],
+                "properties": {
+                  "token": { "type": "string" },
+                  "newPassword": { "type": "string", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Password reset successfully" },
+          "400": { "description": "Invalid or expired reset token" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get authenticated user profile and current shop",
+        "responses": {
+          "200": { "description": "User profile" }
+        }
+      }
+    },
+    "/shops/current": {
+      "get": {
+        "summary": "Get current shop details",
+        "responses": {
+          "200": { "description": "Current shop configuration" }
+        }
+      },
+      "patch": {
+        "summary": "Update current shop configuration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "shopType": { "type": "string" },
+                  "gstin": { "type": "string", "nullable": true },
+                  "currency": { "type": "string", "length": 3 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Shop updated" }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "summary": "List users in current shop",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "isActive", "in": "query", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated users" }
+        }
+      },
+      "post": {
+        "summary": "Create user in current shop",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "password", "roleId"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "phone": { "type": "string" },
+                  "password": { "type": "string", "minLength": 8 },
+                  "roleId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User created" }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Get user by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "User details" }, "404": { "description": "Not found" } }
+      },
+      "patch": {
+        "summary": "Update user details",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "User updated" } }
+      }
+    },
+    "/users/{id}/status": {
+      "patch": {
+        "summary": "Toggle user active status (deactivate / reactivate)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["isActive"],
+                "properties": { "isActive": { "type": "boolean" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Status updated" },
+          "400": { "description": "Deactivation rejected (self or last active owner)" }
+        }
+      }
+    },
+    "/users/{id}/role": {
+      "patch": {
+        "summary": "Change user role",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["roleId"],
+                "properties": { "roleId": { "type": "string", "format": "uuid" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Role changed" }
+        }
+      }
+    },
+    "/roles": {
+      "get": {
+        "summary": "List roles in current shop",
+        "responses": { "200": { "description": "List of roles with permissions" } }
+      },
+      "post": {
+        "summary": "Create custom role",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "permissions": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Role created" } }
+      }
+    },
+    "/roles/{id}": {
+      "get": {
+        "summary": "Get role details",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Role details" } }
+      },
+      "patch": {
+        "summary": "Update custom role",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Role updated" } }
+      },
+      "delete": {
+        "summary": "Delete custom role",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Role deleted" }, "400": { "description": "System role or role has active assigned users" } }
+      }
+    },
+    "/roles/{id}/permissions": {
+      "put": {
+        "summary": "Assign permissions to role",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["permissions"],
+                "properties": { "permissions": { "type": "array", "items": { "type": "string" } } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Permissions updated" } }
+      }
+    },
+    "/permissions": {
+      "get": {
+        "summary": "Get global permissions catalogue",
+        "responses": { "200": { "description": "List of system permissions" } }
+      }
+    },
+    "/modules": {
+      "get": {
+        "summary": "List all shop modules and their toggle states",
+        "responses": { "200": { "description": "Modules status" } }
+      }
+    },
+    "/modules/enabled": {
+      "get": {
+        "summary": "List currently enabled modules for shop",
+        "responses": { "200": { "description": "Enabled modules" } }
+      }
+    },
+    "/modules/{moduleName}": {
+      "put": {
+        "summary": "Enable or disable module",
+        "parameters": [{ "name": "moduleName", "in": "path", "required": true, "schema": { "type": "string", "enum": ["employee", "inventory", "billing"] } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["isEnabled"],
+                "properties": { "isEnabled": { "type": "boolean" } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Module updated" } }
+      }
+    },
+    "/employees": {
+      "get": {
+        "summary": "List employees in shop (salary masked unless authorized)",
+        "responses": { "200": { "description": "List of employees" } }
+      },
+      "post": {
+        "summary": "Create employee profile with account",
+        "responses": { "201": { "description": "Employee created" } }
+      }
+    },
+    "/employees/{userId}": {
+      "get": {
+        "summary": "Get employee profile (salary masked unless authorized or self)",
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Employee profile" } }
+      },
+      "put": {
+        "summary": "Update employee profile",
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Employee updated" } }
+      }
+    },
+    "/audit-logs": {
+      "get": {
+        "summary": "List audit logs with filtering and pagination",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "action", "in": "query", "schema": { "type": "string" } },
+          { "name": "entity", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Paginated audit logs" } }
+      }
+    },
+    "/audit-logs/{id}": {
+      "get": {
+        "summary": "Get audit log entry by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Audit log detail" }, "404": { "description": "Not found" } }
+      }
+    }
+  }
+}
+

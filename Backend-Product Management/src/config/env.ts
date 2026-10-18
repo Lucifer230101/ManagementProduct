@@ -1,5 +1,11 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { z } from 'zod';
+
+if (process.env.NODE_ENV === 'test') {
+  dotenv.config({ path: '.env.test', override: true });
+} else {
+  dotenv.config();
+}
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -10,4 +16,5 @@ const schema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(14).default(12)
 });
+
 export const env = schema.parse(process.env);
