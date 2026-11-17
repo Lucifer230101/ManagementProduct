@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useDispatch, useSelector } from 'react-redux';
 import {
   Box,
   TextField,
@@ -13,6 +15,7 @@ import {
   IconButton,
   InputAdornment,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
   Visibility,
@@ -23,16 +26,34 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
+import type { RootState } from '@/store';
+import {
+  loginStart,
+  loginSuccess,
+  loginFailure,
+  clearError,
+} from '@/store/slices/authSlice';
+import { authService } from '@/services/api/authService';
+import { setAuthSession } from '@/services/api';
+
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email'),
-  password: z.string().min(1, 'Password is required').min(6, 'Password must be at least 6 characters'),
+  password: z
+    .string()
+    .min(1, 'Password is required')
+    .min(6, 'Password must be at least 6 characters'),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const { isLoading, error } = useSelector((state: RootState) => state.auth);
+
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [googleNotice, setGoogleNotice] = useState(false);
 
   const {
     register,
@@ -44,13 +65,29 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginForm) => {
-    // TODO: integrate with auth API
-    console.log('Login:', { ...data, rememberMe });
+    try {
+      dispatch(loginStart());
+      const res = await authService.login({
+        email: data.email.trim(),
+        password: data.password,
+      });
+
+      const { user, token } = res.data;
+      setAuthSession(token, user, rememberMe);
+      dispatch(loginSuccess({ user, token }));
+
+      // Redirect to dashboard on successful login
+      router.push('/dashboard');
+    } catch (err: any) {
+      const message =
+        err?.message || 'Login failed. Please check your credentials and try again.';
+      dispatch(loginFailure(message));
+    }
   };
 
   const handleGoogleLogin = () => {
-    // TODO: integrate Google OAuth
-    console.log('Google login');
+    setGoogleNotice(true);
+    setTimeout(() => setGoogleNotice(false), 5000);
   };
 
   return (
@@ -73,6 +110,24 @@ export default function LoginPage() {
       >
         Sign in to your account to continue
       </Typography>
+
+      {/* Backend Error Alert */}
+      {error && (
+        <Alert
+          severity="error"
+          onClose={() => dispatch(clearError())}
+          sx={{ mb: 3 }}
+        >
+          {error}
+        </Alert>
+      )}
+
+      {/* Google OAuth Notice */}
+      {googleNotice && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Google OAuth is not enabled for local development. Please sign in with your email and password.
+        </Alert>
+      )}
 
       {/* Form */}
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -107,7 +162,11 @@ export default function LoginPage() {
                     tabIndex={-1}
                     sx={{ color: 'text.disabled' }}
                   >
-                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    {showPassword ? (
+                      <VisibilityOff fontSize="small" />
+                    ) : (
+                      <Visibility fontSize="small" />
+                    )}
                   </IconButton>
                 </InputAdornment>
               ),
@@ -160,7 +219,10 @@ export default function LoginPage() {
           fullWidth
           variant="contained"
           size="large"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoading}
+          startIcon={
+            isLoading ? <CircularProgress size={18} color="inherit" /> : null
+          }
           sx={{
             mb: 3,
             py: 1.4,
@@ -170,7 +232,7 @@ export default function LoginPage() {
             fontWeight: 500,
           }}
         >
-          {isSubmitting ? 'Signing in…' : 'Sign in'}
+          {isLoading || isSubmitting ? 'Signing in…' : 'Sign in'}
         </Button>
 
         {/* Divider */}
@@ -228,4 +290,3 @@ export default function LoginPage() {
     </Box>
   );
 }
-

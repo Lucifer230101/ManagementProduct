@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Box,
   TextField,
@@ -9,14 +10,18 @@ import {
   Typography,
   IconButton,
   InputAdornment,
+  Alert,
+  CircularProgress,
 } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { authService } from '@/services/api/authService';
 
 const resetSchema = z
   .object({
+    token: z.string().min(1, 'Reset token is required'),
     password: z
       .string()
       .min(1, 'Password is required')
@@ -30,24 +35,45 @@ const resetSchema = z
 
 type ResetForm = z.infer<typeof resetSchema>;
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
+  const searchParams = useSearchParams();
+  const tokenFromUrl = searchParams.get('token') || '';
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ResetForm>({
     resolver: zodResolver(resetSchema),
-    defaultValues: { password: '', confirmPassword: '' },
+    defaultValues: {
+      token: tokenFromUrl,
+      password: '',
+      confirmPassword: '',
+    },
   });
 
+  useEffect(() => {
+    if (tokenFromUrl) {
+      setValue('token', tokenFromUrl);
+    }
+  }, [tokenFromUrl, setValue]);
+
   const onSubmit = async (data: ResetForm) => {
-    // TODO: integrate with reset password API
-    console.log('Reset password:', data);
-    setSubmitted(true);
+    try {
+      setErrorMessage(null);
+      await authService.resetPassword(data.token.trim(), data.password);
+      setSubmitted(true);
+    } catch (err: any) {
+      setErrorMessage(
+        err?.message || 'Failed to reset password. Token may be invalid or expired.'
+      );
+    }
   };
 
   if (submitted) {
@@ -92,16 +118,30 @@ export default function ResetPasswordPage() {
         Reset password
       </Typography>
       <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
-        Enter your new password below
+        Enter your reset token and new password below
       </Typography>
 
+      {errorMessage && (
+        <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 3 }}>
+          {errorMessage}
+        </Alert>
+      )}
+
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
+        <TextField
+          fullWidth
+          label="Reset Token"
+          error={!!errors.token}
+          helperText={errors.token?.message}
+          {...register('token')}
+          sx={{ mb: 2.5 }}
+        />
+
         <TextField
           fullWidth
           label="New password"
           type={showPassword ? 'text' : 'password'}
           autoComplete="new-password"
-          autoFocus
           error={!!errors.password}
           helperText={errors.password?.message}
           {...register('password')}
@@ -144,7 +184,11 @@ export default function ResetPasswordPage() {
                     tabIndex={-1}
                     sx={{ color: 'text.disabled' }}
                   >
-                    {showConfirmPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    {showConfirmPassword ? (
+                      <VisibilityOff fontSize="small" />
+                    ) : (
+                      <Visibility fontSize="small" />
+                    )}
                   </IconButton>
                 </InputAdornment>
               ),
@@ -159,6 +203,7 @@ export default function ResetPasswordPage() {
           variant="contained"
           size="large"
           disabled={isSubmitting}
+          startIcon={isSubmitting ? <CircularProgress size={18} color="inherit" /> : null}
           sx={{
             py: 1.4,
             bgcolor: '#333333',
@@ -174,3 +219,10 @@ export default function ResetPasswordPage() {
   );
 }
 
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<Typography>Loading…</Typography>}>
+      <ResetPasswordContent />
+    </Suspense>
+  );
+}

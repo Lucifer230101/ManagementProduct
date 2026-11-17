@@ -6,12 +6,15 @@ import {
   TextField,
   Button,
   Typography,
+  Alert,
+  CircularProgress,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useState } from 'react';
+import { authService } from '@/services/api/authService';
 
 const forgotSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email'),
@@ -21,6 +24,8 @@ type ForgotForm = z.infer<typeof forgotSchema>;
 
 export default function ForgotPasswordPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -33,9 +38,16 @@ export default function ForgotPasswordPage() {
   });
 
   const onSubmit = async (data: ForgotForm) => {
-    // TODO: integrate with password reset API
-    console.log('Forgot password:', data);
-    setSubmitted(true);
+    try {
+      setErrorMessage(null);
+      const res = await authService.forgotPassword(data.email.trim());
+      if (res.data?.resetToken) {
+        setGeneratedToken(res.data.resetToken);
+      }
+      setSubmitted(true);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to process password reset request.');
+    }
   };
 
   if (submitted) {
@@ -47,23 +59,43 @@ export default function ForgotPasswordPage() {
         >
           Check your email
         </Typography>
-        <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
-          We&apos;ve sent a password reset link to{' '}
-          <strong>{getValues('email')}</strong>
+        <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
+          Instructions have been generated for <strong>{getValues('email')}</strong>.
         </Typography>
 
-        <Link href="/login">
+        {generatedToken && (
+          <Alert severity="info" sx={{ mb: 3, wordBreak: 'break-all' }}>
+            <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.5 }}>
+              [Development Mode Token]:
+            </Typography>
+            <code style={{ fontSize: '0.8rem' }}>{generatedToken}</code>
+          </Alert>
+        )}
+
+        <Link href={`/reset-password${generatedToken ? `?token=${generatedToken}` : ''}`}>
           <Button
             fullWidth
             variant="contained"
             size="large"
             sx={{
               py: 1.4,
+              mb: 2,
               bgcolor: '#333333',
               '&:hover': { bgcolor: '#1a1a1a' },
               fontSize: '0.95rem',
               fontWeight: 500,
             }}
+          >
+            Enter Reset Token
+          </Button>
+        </Link>
+
+        <Link href="/login">
+          <Button
+            fullWidth
+            variant="text"
+            startIcon={<ArrowBackIcon sx={{ fontSize: '1rem' }} />}
+            sx={{ color: 'text.secondary' }}
           >
             Back to sign in
           </Button>
@@ -84,6 +116,12 @@ export default function ForgotPasswordPage() {
         Enter your email and we&apos;ll send you a reset link
       </Typography>
 
+      {errorMessage && (
+        <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 3 }}>
+          {errorMessage}
+        </Alert>
+      )}
+
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <TextField
           fullWidth
@@ -103,6 +141,7 @@ export default function ForgotPasswordPage() {
           variant="contained"
           size="large"
           disabled={isSubmitting}
+          startIcon={isSubmitting ? <CircularProgress size={18} color="inherit" /> : null}
           sx={{
             mb: 3,
             py: 1.4,
@@ -132,4 +171,3 @@ export default function ForgotPasswordPage() {
     </Box>
   );
 }
-

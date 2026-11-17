@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useDispatch } from 'react-redux';
 import {
   Box,
   TextField,
@@ -10,6 +12,9 @@ import {
   Divider,
   IconButton,
   InputAdornment,
+  Alert,
+  CircularProgress,
+  MenuItem,
 } from '@mui/material';
 import {
   Visibility,
@@ -20,10 +25,30 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
+import { authService } from '@/services/api/authService';
+import { setAuthSession } from '@/services/api';
+import { loginSuccess } from '@/store/slices/authSlice';
+
+const shopTypes = [
+  { value: 'grocery', label: 'Grocery / Kirana' },
+  { value: 'clothing', label: 'Clothing & Apparel' },
+  { value: 'pharmacy', label: 'Pharmacy / Chemist' },
+  { value: 'electronics', label: 'Electronics & Mobile' },
+  { value: 'hardware', label: 'Hardware Store' },
+  { value: 'stationery', label: 'Stationery' },
+  { value: 'general', label: 'General Retail' },
+];
+
 const registerSchema = z
   .object({
-    fullName: z.string().min(1, 'Full name is required').min(2, 'Name must be at least 2 characters'),
+    shopName: z.string().min(2, 'Shop name must be at least 2 characters'),
+    shopType: z.string().min(1, 'Shop type is required'),
+    fullName: z
+      .string()
+      .min(1, 'Full name is required')
+      .min(2, 'Name must be at least 2 characters'),
     email: z.string().min(1, 'Email is required').email('Enter a valid email'),
+    phone: z.string().optional(),
     password: z
       .string()
       .min(1, 'Password is required')
@@ -38,8 +63,12 @@ const registerSchema = z
 type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const dispatch = useDispatch();
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -47,17 +76,40 @@ export default function RegisterPage() {
     formState: { errors, isSubmitting },
   } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { fullName: '', email: '', password: '', confirmPassword: '' },
+    defaultValues: {
+      shopName: '',
+      shopType: 'general',
+      fullName: '',
+      email: '',
+      phone: '',
+      password: '',
+      confirmPassword: '',
+    },
   });
 
   const onSubmit = async (data: RegisterForm) => {
-    // TODO: integrate with auth API
-    console.log('Register:', data);
-  };
+    try {
+      setErrorMessage(null);
+      const res = await authService.register({
+        shopName: data.shopName.trim(),
+        shopType: data.shopType,
+        name: data.fullName.trim(),
+        email: data.email.trim(),
+        phone: data.phone?.trim() || undefined,
+        password: data.password,
+        currency: 'INR',
+      });
 
-  const handleGoogleSignup = () => {
-    // TODO: integrate Google OAuth
-    console.log('Google signup');
+      const { user, token } = res.data;
+      setAuthSession(token, user, true);
+      dispatch(loginSuccess({ user, token }));
+
+      router.push('/dashboard');
+    } catch (err: any) {
+      setErrorMessage(
+        err?.message || 'Failed to create shop account. Please verify your details.'
+      );
+    }
   };
 
   return (
@@ -74,24 +126,51 @@ export default function RegisterPage() {
       >
         Create an account
       </Typography>
-      <Typography
-        variant="body2"
-        sx={{ mb: 4, color: 'text.secondary' }}
-      >
-        Get started with your free account
+      <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
+        Register your shop and get started with your account
       </Typography>
+
+      {errorMessage && (
+        <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 3 }}>
+          {errorMessage}
+        </Alert>
+      )}
 
       {/* Form */}
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <TextField
           fullWidth
-          label="Full name"
-          autoComplete="name"
+          label="Shop / Business Name"
           autoFocus
+          error={!!errors.shopName}
+          helperText={errors.shopName?.message}
+          {...register('shopName')}
+          sx={{ mb: 2 }}
+        />
+
+        <TextField
+          fullWidth
+          select
+          label="Shop Type"
+          defaultValue="general"
+          {...register('shopType')}
+          sx={{ mb: 2 }}
+        >
+          {shopTypes.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          fullWidth
+          label="Owner Full Name"
+          autoComplete="name"
           error={!!errors.fullName}
           helperText={errors.fullName?.message}
           {...register('fullName')}
-          sx={{ mb: 2.5 }}
+          sx={{ mb: 2 }}
         />
 
         <TextField
@@ -102,12 +181,22 @@ export default function RegisterPage() {
           error={!!errors.email}
           helperText={errors.email?.message}
           {...register('email')}
-          sx={{ mb: 2.5 }}
+          sx={{ mb: 2 }}
         />
 
         <TextField
           fullWidth
-          label="Password"
+          label="Phone number (optional)"
+          autoComplete="tel"
+          error={!!errors.phone}
+          helperText={errors.phone?.message}
+          {...register('phone')}
+          sx={{ mb: 2 }}
+        />
+
+        <TextField
+          fullWidth
+          label="Password (min 8 characters)"
           type={showPassword ? 'text' : 'password'}
           autoComplete="new-password"
           error={!!errors.password}
@@ -124,13 +213,17 @@ export default function RegisterPage() {
                     tabIndex={-1}
                     sx={{ color: 'text.disabled' }}
                   >
-                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    {showPassword ? (
+                      <VisibilityOff fontSize="small" />
+                    ) : (
+                      <Visibility fontSize="small" />
+                    )}
                   </IconButton>
                 </InputAdornment>
               ),
             },
           }}
-          sx={{ mb: 2.5 }}
+          sx={{ mb: 2 }}
         />
 
         <TextField
@@ -152,7 +245,11 @@ export default function RegisterPage() {
                     tabIndex={-1}
                     sx={{ color: 'text.disabled' }}
                   >
-                    {showConfirmPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    {showConfirmPassword ? (
+                      <VisibilityOff fontSize="small" />
+                    ) : (
+                      <Visibility fontSize="small" />
+                    )}
                   </IconButton>
                 </InputAdornment>
               ),
@@ -168,6 +265,9 @@ export default function RegisterPage() {
           variant="contained"
           size="large"
           disabled={isSubmitting}
+          startIcon={
+            isSubmitting ? <CircularProgress size={18} color="inherit" /> : null
+          }
           sx={{
             mb: 3,
             py: 1.4,
@@ -192,7 +292,7 @@ export default function RegisterPage() {
           fullWidth
           variant="outlined"
           size="large"
-          onClick={handleGoogleSignup}
+          onClick={() => setErrorMessage('Google OAuth is not configured in local environment.')}
           startIcon={<GoogleIcon />}
           sx={{
             mb: 4,
@@ -235,4 +335,3 @@ export default function RegisterPage() {
     </Box>
   );
 }
-
