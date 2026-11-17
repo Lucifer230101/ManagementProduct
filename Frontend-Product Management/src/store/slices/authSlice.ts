@@ -1,12 +1,9 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import type { AuthUser } from '@/services/api/authService';
+import { clearAuthSession } from '@/services/api';
 
 interface AuthState {
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-  } | null;
+  user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -29,7 +26,10 @@ const authSlice = createSlice({
       state.isLoading = true;
       state.error = null;
     },
-    loginSuccess(state, action: PayloadAction<{ user: AuthState['user']; token: string }>) {
+    loginSuccess(
+      state,
+      action: PayloadAction<{ user: AuthUser; token: string }>
+    ) {
       state.isLoading = false;
       state.isAuthenticated = true;
       state.user = action.payload.user;
@@ -39,12 +39,19 @@ const authSlice = createSlice({
     loginFailure(state, action: PayloadAction<string>) {
       state.isLoading = false;
       state.error = action.payload;
+      state.isAuthenticated = false;
     },
     logout(state) {
       state.user = null;
       state.token = null;
       state.isAuthenticated = false;
+      state.isLoading = false;
       state.error = null;
+      clearAuthSession();
+    },
+    setUser(state, action: PayloadAction<AuthUser | null>) {
+      state.user = action.payload;
+      state.isAuthenticated = !!action.payload;
     },
     clearError(state) {
       state.error = null;
@@ -52,6 +59,6 @@ const authSlice = createSlice({
   },
 });
 
-export const { loginStart, loginSuccess, loginFailure, logout, clearError } = authSlice.actions;
+export const { loginStart, loginSuccess, loginFailure, logout, setUser, clearError } =
+  authSlice.actions;
 export default authSlice.reducer;
-

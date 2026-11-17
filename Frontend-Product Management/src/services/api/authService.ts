@@ -1,40 +1,62 @@
 import { api } from '../api';
+import type { ApiResponse } from '@/types';
 
 export interface LoginPayload {
   email: string;
   password: string;
+  shopId?: string;
 }
 
 export interface RegisterPayload {
-  fullName: string;
+  shopName: string;
+  shopType?: string;
+  currency?: string;
+  gstin?: string;
+  name: string;
   email: string;
+  phone?: string;
   password: string;
 }
 
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  shopId: string;
+  roleId: string;
+  shopName?: string;
+  shopType?: string;
+}
+
 export interface AuthResponse {
-  user: {
+  user: AuthUser;
+  token: string;
+  shop?: {
     id: string;
     name: string;
-    email: string;
-    role: string;
+    shopType?: string;
+    currency?: string;
   };
-  token: string;
 }
 
 export const authService = {
   login: (payload: LoginPayload) =>
-    api.post<AuthResponse>('/auth/login', payload),
+    api.post<ApiResponse<AuthResponse>>('/auth/login', payload),
 
   register: (payload: RegisterPayload) =>
-    api.post<AuthResponse>('/auth/register', payload),
+    api.post<ApiResponse<AuthResponse>>('/auth/register', payload),
 
-  forgotPassword: (email: string) =>
-    api.post<{ message: string }>('/auth/forgot-password', { email }),
+  forgotPassword: (email: string, shopId?: string) =>
+    api.post<ApiResponse<{ message: string; resetToken?: string }>>('/auth/password/forgot', { email, shopId }),
 
-  resetPassword: (token: string, password: string) =>
-    api.post<{ message: string }>('/auth/reset-password', { token, password }),
+  resetPassword: (token: string, newPassword: string) =>
+    api.post<ApiResponse<{ message: string }>>('/auth/password/reset', { token, newPassword }),
 
   logout: () =>
-    api.post<{ message: string }>('/auth/logout', {}),
-};
+    api.post<ApiResponse<{ message: string }>>('/auth/logout', {}),
 
+  getMe: () =>
+    api.get<ApiResponse<AuthUser>>('/auth/me'),
+};
